@@ -1,5 +1,5 @@
 URL de la aplicación Streamlit:
-https://<nombre-de-tu-app>.streamlit.app
+https://mlp-taller-ia-kevinc-alexm-yeimerg.streamlit.app
 
 Repositorio GitHub:
 https://github.com/<usuario>/<repositorio>
