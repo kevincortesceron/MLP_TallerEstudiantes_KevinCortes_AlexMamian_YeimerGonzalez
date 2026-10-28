@@ -2,6 +2,6 @@ URL de la aplicación Streamlit:
 https://<nombre-de-tu-app>.streamlit.app
 
 Repositorio GitHub:
-https://github.com/kevincortesceron/MLP_TallerEstudiantes_KevinCortes_AlexMamian_YeimerGonzalez.git
+https://github.com/<usuario>/<repositorio>
 
 Reemplace los valores anteriores después del despliegue.

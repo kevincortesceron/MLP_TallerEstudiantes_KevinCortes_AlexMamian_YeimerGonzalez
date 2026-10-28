@@ -2,6 +2,7 @@ from pathlib import Path
 
 import joblib
 import numpy as np
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -123,7 +124,7 @@ with pestana_individual:
                 format_func=lambda x: "Sí" if x == 1 else "No",
             )
 
-        enviar = st.form_submit_button("Generar predicción", type="primary", use_container_width=True)
+        enviar = st.form_submit_button("Generar predicción", type="primary", width="stretch")
 
     if enviar:
         entrada = pd.DataFrame(
@@ -158,7 +159,7 @@ with pestana_individual:
 
         st.dataframe(
             entrada.rename(columns=etiquetas).T.rename(columns={0: "Valor suministrado"}),
-            use_container_width=True,
+            width="stretch",
         )
 
 with pestana_lote:
@@ -194,7 +195,7 @@ with pestana_lote:
                 salida["Probabilidad_Reprobado"] = 1 - probabilidades
 
                 st.success(f"Se procesaron {len(salida)} registros.")
-                st.dataframe(salida, use_container_width=True, hide_index=True)
+                st.dataframe(salida, width="stretch", hide_index=True)
                 st.download_button(
                     "Descargar resultados",
                     data=salida.to_csv(index=False).encode("utf-8"),
@@ -207,6 +208,11 @@ with pestana_lote:
 
 with pestana_modelo:
     st.subheader("Evaluación sobre el conjunto de prueba independiente")
+    st.caption(
+        f"{artefacto.get('tamano_train', 'N/D')} registros de entrenamiento y "
+        f"{artefacto.get('tamano_test', 'N/D')} de prueba (división 80/20 estratificada). "
+        "El set de prueba no se usó para elegir la arquitectura."
+    )
     metricas = artefacto["metricas_prueba_independiente"]
     cols = st.columns(5)
     for col, nombre in zip(cols, ["Accuracy", "Precision", "Recall", "F1-Score", "ROC-AUC"]):
@@ -216,16 +222,47 @@ with pestana_modelo:
     with izquierda:
         st.markdown("#### Matriz de confusión")
         cm = np.asarray(artefacto["matriz_confusion"])
-        cm_df = pd.DataFrame(
-            cm,
-            index=["Real: Reprobado", "Real: Aprobado"],
-            columns=["Predicho: Reprobado", "Predicho: Aprobado"],
+        clases_txt = ["Reprobado", "Aprobado"]
+        cm_largo = pd.DataFrame(
+            [
+                {"Real": clases_txt[i], "Predicho": clases_txt[j], "Cantidad": int(cm[i, j])}
+                for i in range(2)
+                for j in range(2)
+            ]
         )
-        st.dataframe(cm_df, use_container_width=True)
+        base_cm = alt.Chart(cm_largo).encode(
+            x=alt.X("Predicho:N", sort=clases_txt, title="Predicción", axis=alt.Axis(labelAngle=0)),
+            y=alt.Y("Real:N", sort=clases_txt, title="Valor real"),
+        )
+        heatmap = base_cm.mark_rect().encode(
+            color=alt.Color("Cantidad:Q", scale=alt.Scale(scheme="blues"), legend=None),
+            tooltip=["Real", "Predicho", "Cantidad"],
+        )
+        textos = base_cm.mark_text(fontSize=22, fontWeight="bold").encode(
+            text="Cantidad:Q",
+            color=alt.condition(
+                alt.datum.Cantidad > cm.max() / 2, alt.value("white"), alt.value("#17202A")
+            ),
+        )
+        st.altair_chart((heatmap + textos).properties(height=280), width="stretch")
+        vn, fp, fn, vp = cm.ravel()
+        st.caption(
+            f"Aciertos: {vn + vp} de {cm.sum()} · Falsos positivos (reprobado predicho como aprobado): {fp} · "
+            f"Falsos negativos (aprobado predicho como reprobado): {fn}"
+        )
+
+        st.markdown("#### Entrenamiento vs. prueba")
+        entrenamiento = artefacto.get("metricas_entrenamiento")
+        if entrenamiento:
+            comparacion = pd.DataFrame(
+                {"Entrenamiento": entrenamiento, "Prueba": metricas}
+            ).map(lambda v: f"{v:.3f}")
+            st.dataframe(comparacion, width="stretch")
+            st.caption("Una diferencia pequeña entre ambas columnas indica que el modelo no está sobreajustado.")
 
         balance = pd.Series(artefacto["balance_clases"], name="Registros")
         st.markdown("#### Balance de clases")
-        st.bar_chart(balance)
+        st.bar_chart(balance, height=220)
 
     with derecha:
         st.markdown("#### Importancia por permutación")
@@ -236,10 +273,61 @@ with pestana_modelo:
         if importancia.empty:
             st.caption("La importancia por permutación no está disponible para este artefacto.")
         else:
-            st.bar_chart(importancia)
+            imp_df = importancia.rename_axis("Variable").reset_index()
+            grafico_imp = alt.Chart(imp_df).mark_bar(color="#3973AC").encode(
+                x=alt.X("Importancia:Q", title="Caída del F1"),
+                y=alt.Y("Variable:N", sort="-x", title=None),
+                tooltip=["Variable", alt.Tooltip("Importancia:Q", format=".3f")],
+            ).properties(height=230)
+            st.altair_chart(grafico_imp, width="stretch")
+            st.caption("Cuánto cae el F1 en prueba al desordenar cada variable.")
 
         st.markdown("#### Arquitectura seleccionada")
-        st.json(artefacto["mejores_parametros"])
+        mejores = artefacto["mejores_parametros"]
+        f1_cv = artefacto.get("f1_cv")
+        st.write(
+            f"Capas ocultas: **{tuple(mejores['hidden_layer_sizes'])}** · "
+            f"Activación: **{mejores['activation']}** · alpha: **{mejores['alpha']}**"
+        )
+        if f1_cv is not None:
+            st.write(
+                f"F1 promedio en validación cruzada (5 folds): **{f1_cv:.3f} ± {artefacto.get('f1_cv_std', 0):.3f}** "
+                f"({artefacto.get('combinaciones_evaluadas', 'N/D')} combinaciones evaluadas)"
+            )
+        top = artefacto.get("top_busqueda")
+        if top:
+            with st.expander("Mejores 10 combinaciones de la búsqueda"):
+                st.dataframe(pd.DataFrame(top), width="stretch", hide_index=True)
+
+        estabilidad = artefacto.get("estabilidad_semillas")
+        if estabilidad:
+            st.markdown("#### Estabilidad")
+            st.write(
+                f"Accuracy en prueba con 10 semillas distintas: **{estabilidad['media']:.3f} ± "
+                f"{estabilidad['desviacion']:.3f}**"
+            )
+
+    modelo_base = artefacto.get("modelo_base")
+    if modelo_base:
+        st.markdown("#### Comparación con un modelo base")
+        tabla_base = pd.DataFrame(
+            {"MLP": metricas, modelo_base["nombre"]: modelo_base["metricas"]}
+        ).map(lambda v: f"{v:.3f}")
+        st.dataframe(tabla_base, width="stretch")
+
+    analisis = artefacto.get("analisis_calificacion_final")
+    if analisis:
+        st.markdown("#### Hallazgo sobre los datos")
+        coef = analisis["coeficientes"]
+        formula = " + ".join(f"{v:g}·{k}" for k, v in coef.items())
+        st.markdown(
+            f"`Calificacion_Final` es una combinación lineal exacta de las seis variables "
+            f"(R² = {analisis['r2_combinacion_lineal']:.3f}):\n\n"
+            f"`Calificacion_Final = {formula}`\n\n"
+            f"y `Aprobado` vale 1 cuando esa nota supera la mediana "
+            f"(≈ {analisis['mediana_calificacion_final']:.2f}). Por eso las clases se separan con una frontera "
+            "lineal y la regresión logística alcanza el mismo desempeño que el MLP."
+        )
 
     st.info(
         "Estos resultados describen un dataset sintético. Antes de tomar decisiones reales se requiere "

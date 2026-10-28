@@ -6,7 +6,9 @@ Aplicación Streamlit generada desde el notebook del taller. El modelo recibe se
 
 - `app.py`: interfaz Streamlit para predicción individual, por lotes y consulta de métricas.
 - `modelo_mlp_estudiantes.joblib`: Pipeline final listo para inferencia.
-- `train_model.py`: script para reentrenar el modelo.
+- `train_model.py`: script de entrenamiento: búsqueda de arquitectura con GridSearchCV, evaluación en el set de prueba, comparación con regresión logística y prueba de estabilidad.
+- `CONCLUSIONES.md`: análisis de los datos, métricas e interpretación.
+- `matriz_confusion.png`: matriz de confusión del set de prueba.
 - `dataset_estudiantes_balanceado.csv`: datos del taller.
 - `ejemplo_entrada.csv`: plantilla de carga por lotes.
 - `requirements.txt`: dependencias de Python.
@@ -35,8 +37,17 @@ streamlit run app.py
 4. Despliegue la aplicación.
 5. Copie la URL `https://...streamlit.app` en `LINK_ENDPOINT.txt` y en el informe de entrega.
 
+## Reentrenar el modelo
+
+```bash
+python train_model.py
+```
+
+Genera de nuevo `modelo_mlp_estudiantes.joblib` y `matriz_confusion.png`, e imprime las métricas en consola.
+
 ## Consideraciones metodológicas
 
 - `Calificacion_Final` no se utiliza como entrada porque es una salida derivada y causaría fuga de información.
+- La arquitectura del MLP se elige con GridSearchCV (5 folds, métrica F1) usando solo el set de entrenamiento.
 - Las métricas guardadas corresponden a un conjunto de prueba independiente antes de reentrenar el modelo final con todos los registros.
 - Los datos son sintéticos. El resultado debe entenderse como demostración académica y no como decisión definitiva sobre una persona.
